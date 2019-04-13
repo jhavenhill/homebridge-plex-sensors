@@ -37,7 +37,7 @@
                     "name": "Music",
                     "types": ["track"],
                     "players": ["Bedroom"],
-                    "ignorePauseResume": true
+                    "triggerType": "trigger.playStop"
                 },
                 {
                   "name": "Breaking Bad is on",
@@ -46,6 +46,12 @@
                   {
                       "Metadata.grandparentTitle": "Breaking Bad"
                   }
+                },
+                {
+                    "name": "Movie Paused",
+                    "types": ["movie"],
+                    "players": ["Bedroom"],
+                    "triggerType": "trigger.pauseResume"
                 }
             ],
             "debug": true,

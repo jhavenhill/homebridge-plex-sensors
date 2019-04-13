@@ -32,7 +32,7 @@ function Plex(log, config, api) {
     this.timeouts = {};
     debug = config["debug"] || false;
     var self = this;
-        
+
     this.server = http.createServer(function(request, response) {
         let body = [];
         request.on('data', (chunk) => {
@@ -43,7 +43,7 @@ function Plex(log, config, api) {
           response.end("");
         });
     });
-    
+
     this.server.listen(this.port, function(){
         self.log("Homebridge Plex Sensors listening for webhooks on: http://<homebridge ip>:%s", self.port);
     });
@@ -58,9 +58,9 @@ function Plex(log, config, api) {
                 {
                     self.log("Adding '"+sensor.name+"' sensor.");
                     var accessory = new Accessory(sensor.name, uuid);
-                                        
+
                     var service = accessory.addService(Service.OccupancySensor, sensor.name);
-                    
+
                     self.accessories[uuid] = accessory;
                     sensor.service = service;
                     sensor.accessory = accessory;
@@ -68,7 +68,7 @@ function Plex(log, config, api) {
                 }
             }
             sensor.activePlayers = new Set();
-            
+
             if (sensor.genres)
             {
                 for (var i = 0; i < sensor.genres.length; i++)
@@ -76,14 +76,30 @@ function Plex(log, config, api) {
                     sensor.genres[i] = sensor.genres[i].toLowerCase();
                 }
             }
-            
+
+            // To be compatable with older config files, if the ignorePauseResume variable is set, convert it to the trigger.playStop type.
+            if (sensor.ignorePauseResume == true) {
+              sensor.triggerType = "trigger.playstop";
+            }
+            // If TriggerType is not present in the config file set it to trigger.normal
+            else if (!sensor.triggerType) {
+              sensor.triggerType = "trigger.normal";
+            }
+            // Verify that the provide trigger type is valid and if not, set it to the default of trigger.normal
+            else {
+              sensor.triggerType = sensor.triggerType.toLowerCase();
+              if ((sensor.triggerType != "trigger.playstop") && (sensor.triggerType != "trigger.pauseresume") && (sensor.triggerType != "trigger.scrobble")) {
+                sensor.triggerType = "trigger.normal";
+              }
+            }
+
             var informationService = sensor.accessory.getService(Service.AccessoryInformation);
             informationService
               .setCharacteristic(Characteristic.Manufacturer, "Homebridge Sensors for Plex")
               .setCharacteristic(Characteristic.Model, "Plex Sensor")
               .setCharacteristic(Characteristic.SerialNumber, sensor.name);
         }
-        
+
         var deleteAccessories = new Array();
         for (var accessoryUUID in self.accessories)
         {
@@ -96,7 +112,7 @@ function Plex(log, config, api) {
                     foundInSensors = true;
                 }
             }
-            
+
             if (!foundInSensors)
             {
                 delete self.accessories[accessory.UUID];
@@ -140,38 +156,81 @@ Plex.prototype.httpHandler = function(self, body) {
     catch(e) {
         self.debugLog("Webhook URL called without JSON body.");
     }
-    
+
     if (!event)
     {
         return;
     }
-    
+
     self.debugLog("Plex incoming webhook");
 
-    // Ignore non playback events
-    if (event.event != "media.play"
-        && event.event != "media.resume"
-        && event.event != "media.stop"
-        && event.event != "media.pause")
-    {
-        return;
-    }
-    
     if ((self.logSeenPlayersAndUsers || debug)
         && event.event == "media.play")
     {
         self.log("Seen player: \""+event.Player.title+"\" (with UUID: \""+event.Player.uuid+"\")");
         self.log("Seen user: \""+event.Account.title+"\"");
     }
-    
+
     self.debugLog("Processing event: "+json);
-    
+
     for (var sensor of self.sensors) {
-        self.processEvent(self, event, sensor);   
+        self.processEvent(self, event, sensor);
     }
 }
 
 Plex.prototype.processEvent = function(self, event, sensor) {
+
+  var activateSensor = false;
+
+  // Parse the playback event. Based upon the sensorType choose to either ignore or process that event and to either set or clear the activateSensor flag.
+  switch (event.event) {
+    case "media.play":
+      if ((sensor.triggerType == "trigger.normal") || (sensor.triggerType == "trigger.playstop")) {
+        activateSensor = true;
+      }
+      else {
+        self.debugLog("Play event ignored for sensor: "+sensor.name);
+        return;
+      }
+      break;
+    case "media.resume":
+      if ((sensor.triggerType == "trigger.normal") || (sensor.triggerType == "trigger.pauseresume")) {
+        activateSensor = (sensor.triggerType == "trigger.normal");
+      }
+      else {
+        self.debugLog("Resume event ignored for sensor: "+sensor.name);
+        return;
+      }
+      break;
+    case "media.pause":
+      if ((sensor.triggerType == "trigger.normal") || (sensor.triggerType == "trigger.pauseresume")) {
+        activateSensor = (sensor.triggerType == "trigger.pauseresume");
+      }
+      else {
+        self.debugLog("Pause event ignored for sensor: "+sensor.name);
+        return;
+      }
+      break;
+    case "media.stop":
+      // All sensors will be deactivated upon a media.stop event.
+      activateSensor = false;
+      break;
+    case "media.scrobble":
+      // A meida.scrobble event is when the media file reaches 90% playback.
+      if (sensor.triggerType == "trigger.scrobble") {
+        activateSensor = true;
+      }
+      else {
+        self.debugLog("Scrobble event ignored for sensor: "+sensor.name);
+        return;
+      }
+      break;
+    default:
+      self.debugLog("'" + event.event + "' event ignored for sensor: "+sensor.name);
+      return;
+      break;
+  }
+
     if (sensor.users
         && sensor.users.length > 0
         && sensor.users.indexOf(event.Account.title) == -1)
@@ -205,7 +264,7 @@ Plex.prototype.processEvent = function(self, event, sensor) {
             self.debugLog("Event doesn't match genres for sensor: "+sensor.name);
             return;
         }
-        
+
         for (var genre of event.Metadata.Genre)
         {
             if (sensor.genres.indexOf(genre.tag.toLowerCase()) > -1)
@@ -214,7 +273,7 @@ Plex.prototype.processEvent = function(self, event, sensor) {
                 matches = true;
             }
         }
-        
+
         if (!matches)
         {
             self.debugLog("Event doesn't match genres for sensor: "+sensor.name);
@@ -235,8 +294,9 @@ Plex.prototype.processEvent = function(self, event, sensor) {
             }
         }
     }
-    
-    if (event.event == "media.play" || (event.event == "media.resume" && !sensor.ignorePauseResume))
+
+    // Based upon the activateSensor flag either turn on or turn off the sensor
+    if (activateSensor)
     {
         if (typeof this.timeouts[sensor.name] != 'undefined')
         {
@@ -250,11 +310,11 @@ Plex.prototype.processEvent = function(self, event, sensor) {
         sensor.activePlayers.add(event.Player.uuid);
         sensor.service.getCharacteristic(Characteristic.OccupancyDetected).updateValue(true);
     }
-    else if (event.event == "media.stop" || (event.event == "media.pause" && !sensor.ignorePauseResume))
+    else
     {
         sensor.activePlayers.delete(event.Player.uuid);
         if (sensor.activePlayers.size == 0)
-        {   
+        {
             if (typeof this.timeouts[sensor.name] != 'undefined')
             {
                 self.debugLog("Clear existing delayed off for: "+sensor.name);
@@ -275,10 +335,6 @@ Plex.prototype.processEvent = function(self, event, sensor) {
                 sensor.service.getCharacteristic(Characteristic.OccupancyDetected).updateValue(false);
             }
         }
-    }
-    else
-    {
-        self.debugLog("Pause / Resume event ignored for sensor: "+sensor.name);
     }
 }
 

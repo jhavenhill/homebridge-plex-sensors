@@ -1,6 +1,6 @@
 # Homebridge Sensors for Plex
 
-This plugin for [Homebridge](https://github.com/nfarina/homebridge) adds sensor(s) to HomeKit that are triggered by Plex playbacks.  You can use these sensors to trigger HomeKit scenes when Plex starts and stops playback.
+This plugin for [Homebridge](https://github.com/nfarina/homebridge) adds sensor(s) to HomeKit that are triggered by Plex playbacks.  You can use these sensors to trigger HomeKit scenes when Plex starts and stops playback, pauses and resumes playback, or reaches 90% play through.
 
 ![Example image of a Homebridge Sensor for Plex](Images/Example.png?raw=true "Example image of a Homebridge Sensor for Plex")
 
@@ -43,7 +43,8 @@ Variable | Description
 `players` | (Optional) This is an array of player names or UUIDs for players that will trigger the sensor. (To find out your player name you can check the [Now Playing section of Plex Web](https://app.plex.tv/desktop#!/status/playing) while that player is playing, or enable the `logSeenPlayersAndUsers` setting described below which will also log UUID values as an alternative to names)
 `users` | (Optional) This is an array of user names for users that will trigger the sensor. (To find out your user name you can check the [Now Playing section of Plex Web](https://app.plex.tv/desktop#!/status/playing) while that user is playing)
 `genres` | (Optional) This is an array of genre strings. If set, movie playbacks will only trigger the sensor if the movie's genre matches one or more of the genres in this array.
-`ignorePauseResume` | (Optional - default: false) If set to true the sensor will remain "triggered" while playback is paused. By default paused players will untrigger the sensor.
+`triggerType` | (Optional - default: trigger.normal) Defines the events that will trigger this sensor. `trigger.Normal` is the default and will trigger the sensor when play starts or resumes, and will untrigger the sensor will play is paused or stopped. `trigger.playStop` will trigger the sensor on play events and untrigger on stop events. `trigger.pauseResume` will trigger the sensor on pause events and untrigger on resume playback events. `trigger.scrobble` will trigger when the media reaches 90% play through.
+`ignorePauseResume` | (Deprecated) If set to true the sensor will remain "triggered" while playback is paused. By default paused players will untrigger the sensor. This has been replaced by the `trigger.playStop` trigger type.
 `customFilters` | (Optional / Advanced) Custom filters allow you to filter for specific properties on the JSON events that the above use cases don't cover. For example you could make a sensor only triggered by playing a specific TV Show or movie. See [Plex's article on Webhooks](https://support.plex.tv/articles/115002267687-webhooks/) for more details of what is passed in webhook events.
 `delayOff` | (Optional - default: 0) Setting this to a value above 0 will delay the occupancy sensor being untriggered when playback is stopped. This timeout is measured in milliseconds.
 
@@ -52,7 +53,6 @@ Additionally, you can set the following settings globally, outside of the `senso
 Variable | Description
 -------- | -----------
 `logSeenPlayersAndUsers` | (Optional - default: false) Setting this to true will log every player device name and username that the plugin sees starting a playback from the webhook, potentially useful for figuring out device names.
-
 `debug` | (Optional - default: false) Setting this to true will log every webhook and how it is handled by the plugin's logic. You should probably leave this false, but you might find it useful for looking at the entire contents of a webhook payload.
 
 
@@ -110,6 +110,33 @@ Example config with a horror movie genre-specific sensor:
         "name": "Horror Movie",
         "types": ["movie"],
         "genres": ["Horror"]
+      }
+    ]
+  }
+]
+}
+```
+
+Example config with a sensor triggered by TV show start and stop, and a sensor triggered by movie pause and resume (both filtered to a specific user and player):
+```json
+{
+"platforms": [
+  {
+    "platform": "homebridge-plex-sensors.Plex",
+    "sensors": [
+      {
+        "name": "Movie Paused",
+        "types": ["movie"],
+        "players": ["Living Room"],
+        "users": ["MyUserName"],
+        "triggerType": "trigger.pauseResume"
+      },
+      {
+        "name": "TV Playing - Ignore Pauses",
+        "types": ["episode"],
+        "players": ["Living Room"],
+        "users": ["MyUserName"],
+        "triggerType": "trigger.playStop"
       }
     ]
   }
