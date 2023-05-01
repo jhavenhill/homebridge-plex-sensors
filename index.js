@@ -281,19 +281,43 @@ Plex.prototype.processEvent = function(self, event, sensor) {
         }
     }
     if (sensor.customFilters)
-    {
-        for (var filterPath of Object.keys(sensor.customFilters))
+        if (!sensor.matchAnyCustomFilter)
         {
-            var eventValue = filterPath.split('.').reduce((previous, current) => {
-                return previous[current];
-            }, event);
-            if (eventValue != sensor.customFilters[filterPath])
+            for (var filterPath of Object.keys(sensor.customFilters))
             {
-                self.debugLog("Event doesn't match custom filter for sensor: "+sensor.name);
+                var eventValue = filterPath.split('.').reduce((previous, current) => {
+                    return previous[current];
+                }, event);
+                if (eventValue != sensor.customFilters[filterPath])
+                {
+                    self.debugLog("Event doesn't match custom filter for sensor: "+sensor.name);
+                    return;
+                }
+            }
+        }
+        else
+        {   
+            var matches = false;
+            self.debugLog("Testing custom filters for sensor: "+sensor.name);
+            for (var filterPath of Object.keys(sensor.customFilters))
+            {
+                var eventValue = filterPath.split('.').reduce((previous, current) => {
+                    return previous[current];
+                }, event);
+                self.debugLog("Testing custom filter: '"+eventValue+"'' in "+filterPath+": "+sensor.customFilters[filterPath]);
+                if (sensor.customFilters[filterPath].indexOf(eventValue) > -1)
+                {
+                    self.debugLog("Matched custom filter ("+eventValue+") for sensor: "+sensor.name);
+                    matches = true;
+                }
+            }
+
+            if (!matches)
+            {
+                self.debugLog("Event doesn't match custom filters for sensor: "+sensor.name);
                 return;
             }
         }
-    }
 
     // Based upon the activateSensor flag either turn on or turn off the sensor
     if (activateSensor)
